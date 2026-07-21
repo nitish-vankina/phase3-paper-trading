@@ -2,7 +2,7 @@ name: Daily paper trading run
 
 on:
   schedule:
-    # 21:30 UTC, Mon-Fri = 4:30pm ET (winter) / 5:30pm ET (summer) — after the US market's 4pm close either way
+    # 21:30 UTC, Mon-Fri = 4:30pm ET (winter) / 5:30pm ET (summer)
     - cron: '30 21 * * 1-5'
   workflow_dispatch: {}   # lets you click "Run workflow" in the Actions tab to trigger it manually
 
@@ -22,7 +22,10 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade --no-cache-dir yfinance curl_cffi
+          pip install -r requirements.txt
 
       - name: Run the trading engine
         run: python phase3_paper_trader.py run

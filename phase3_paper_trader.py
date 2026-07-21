@@ -3,34 +3,7 @@
 Phase 3 Paper Trading Engine
 =============================
 Extends the original phase_3 backtest script into a stateful, daily-runnable
-PAPER trading engine (no real money, no brokerage connection). It:
-
-  1. Pulls fresh daily closes for the tracked universe via yfinance.
-  2. Recomputes the exact dual-horizon trend-ensemble signal + inverse-vol /
-     top-2-intensity allocation logic from the original script for "today".
-  3. Rebalances a simulated portfolio toward those target weights, applying
-     the same 0.05% transaction friction and 4.5% annual cash yield.
-  4. Tracks every position, every closed round-trip trade, running P/L, and
-     win rate in a local JSON state file (paper_state.json).
-  5. Exports dashboard_data.json — the file the companion HTML dashboard
-     (phase3_dashboard.html) reads to render the monitor.
-
-IMPORTANT — run this yourself, not inside a hosted sandbox:
-This script needs real internet access to Yahoo Finance. Run it on your own
-machine (or a server/cron job you control) where outbound internet works.
-It will NOT fetch live data if run somewhere with restricted network egress.
-
-USAGE
------
-    pip install yfinance numpy pandas
-
-    python phase3_paper_trader.py run        # fetch data, rebalance, log, export (do this once/day after close)
-    python phase3_paper_trader.py status     # read-only: print current stats, no trading
-    python phase3_paper_trader.py reset      # wipe state and start a fresh paper portfolio
-
-Schedule `run` once per trading day after market close (crontab on
-Mac/Linux, Task Scheduler on Windows) and point the dashboard at the
-dashboard_data.json it writes each time.
+PAPER trading engine (no real money, no brokerage connection).
 """
 
 import argparse
@@ -41,6 +14,7 @@ from curl_cffi import requests
 
 import numpy as np
 import pandas as pd
+import yfinance as yf
 
 # ----------------------------------------------------------------------
 # CONFIG — mirrors the original phase_3 script
@@ -51,7 +25,7 @@ STARTING_CAPITAL = 1000.0
 TXN_COST = 0.0005          # 0.05% friction per rebalance trade
 CASH_YIELD_ANNUAL = 0.045  # 4.5% annual yield on uninvested cash
 DAILY_CASH_RATE = CASH_YIELD_ANNUAL / 252
-HISTORY_DAYS = 500         # trading days of history pulled each run (needs 120+22 min for signals to warm up)
+HISTORY_DAYS = 500         # trading days of history pulled each run
 TOP_N = 2                  # top-N assets by trend intensity get allocated
 
 HORIZONS = [
@@ -59,9 +33,6 @@ HORIZONS = [
     {"sma": 120, "max": 22, "min": 8,  "weight": 0.65},
 ]
 
-# DATA_DIR lets a deployed server point these at a persistent disk
-# (e.g. Render disk mounted at /var/data). Defaults to the current
-# directory for local/manual use, unchanged from the original script.
 DATA_DIR = os.environ.get("DATA_DIR", ".")
 STATE_FILE = os.path.join(DATA_DIR, "paper_state.json")
 DASHBOARD_FILE = os.path.join(DATA_DIR, "dashboard_data.json")
@@ -72,20 +43,19 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # 1. DATA
 # ----------------------------------------------------------------------
 def fetch_price_history():
-    """Pull recent daily closes for the universe + benchmark. Needs real internet."""
-    import yfinance as yf
+    """Pull recent daily closes for the universe + benchmark fast with curl_cffi."""
     all_tickers = TICKERS + [BENCHMARK]
-    raw = yf.download(all_tickers, period=f"{HISTORY_DAYS}d", progress=False)
+    session = requests.Session(impersonate="chrome")
+    raw = yf.download(all_tickers, period=f"{HISTORY_DAYS}d", session=session, progress=False)
     close_df = raw["Close"].ffill().bfill()
     return close_df
 
 
 # ----------------------------------------------------------------------
-# 2. SIGNAL ENGINE — identical logic to the original phase_3 backtest,
-#    evaluated to produce ONE target-weight vector for "today"
+# 2. SIGNAL ENGINE
 # ----------------------------------------------------------------------
 def compute_master_signals(close_df, tickers, horizons):
-    """Replicates the dual-horizon trend-state detector from the original script."""
+    """Replicates the dual-horizon trend-state detector."""
     close_vals = close_df[tickers].values
     shifted_close = close_df[tickers].shift(1).values
     num_days, num_assets = close_vals.shape
@@ -117,14 +87,9 @@ def compute_master_signals(close_df, tickers, horizons):
 
 
 def compute_target_weights_today(close_df, tickers=TICKERS, horizons=HORIZONS, top_n=TOP_N):
-    """
-    Returns a dict {ticker: target_weight} for the most recent row in close_df,
-    using the same inverse-vol / top-N-intensity allocation logic as the backtest.
-    """
     master_signals = compute_master_signals(close_df, tickers, horizons)
     num_assets = len(tickers)
 
-    # Signal "as of today" uses data through today's close (last row)
     today_signal = master_signals[-1]
 
     rolling_vol = close_df[tickers].pct_change().rolling(21).std().fillna(0.01).values[-1]
@@ -163,12 +128,10 @@ def default_state():
         "starting_capital": STARTING_CAPITAL,
         "cash": STARTING_CAPITAL,
         "last_run": None,
-        "positions": {
-            # ticker -> {shares, avg_cost, open_date, realized_pl_accum, cost_basis_accum}
-        },
+        "positions": {},
         "closed_trades": [],
-        "equity_curve": [],       # [{date, equity, spy_equity}]
-        "spy_shares_ref": None,   # shares of SPY $1000 would have bought at first run (benchmark)
+        "equity_curve": [],
+        "spy_shares_ref": None,
     }
 
 
@@ -185,15 +148,9 @@ def save_state(state, path=STATE_FILE):
 
 
 # ----------------------------------------------------------------------
-# 4. REBALANCE — turn target weights into simulated buy/sell trades
+# 4. REBALANCE
 # ----------------------------------------------------------------------
 def rebalance(state, target_weights, prices, run_date):
-    """
-    prices: dict {ticker: last_close}
-    Applies cash yield accrual, then trades toward target_weights,
-    tracking realized P/L per ticker episode for win-rate purposes.
-    """
-    # Accrue yield on cash sitting idle since the last run
     state["cash"] += state["cash"] * DAILY_CASH_RATE
 
     equity = state["cash"] + sum(
@@ -212,7 +169,7 @@ def rebalance(state, target_weights, prices, run_date):
         })
         current_value = pos["shares"] * price
         delta_value = target_value - current_value
-        if abs(delta_value) < 1.0:  # ignore rebalances smaller than $1 (noise/friction floor)
+        if abs(delta_value) < 1.0:
             continue
 
         delta_shares = delta_value / price
@@ -220,7 +177,6 @@ def rebalance(state, target_weights, prices, run_date):
         state["cash"] -= friction_cost
 
         if delta_shares > 0:
-            # BUY — blend into average cost
             new_shares = pos["shares"] + delta_shares
             pos["avg_cost"] = (
                 (pos["shares"] * pos["avg_cost"] + delta_shares * price) / new_shares
@@ -230,10 +186,8 @@ def rebalance(state, target_weights, prices, run_date):
             if pos["shares"] == 0:
                 pos["open_date"] = run_date
             pos["shares"] = new_shares
-            state["cash"] -= delta_value  # spend cash to buy
-
+            state["cash"] -= delta_value
         else:
-            # SELL (partial or full) — realize P/L on the shares sold
             sell_shares = min(-delta_shares, pos["shares"])
             realized = sell_shares * (price - pos["avg_cost"])
             pos["realized_pl_accum"] += realized
@@ -241,7 +195,6 @@ def rebalance(state, target_weights, prices, run_date):
             state["cash"] += sell_shares * price
 
             if pos["shares"] <= 1e-6:
-                # Fully closed -> log a round-trip trade for win-rate tracking
                 total_cost_basis = pos["cost_basis_accum"] if pos["cost_basis_accum"] > 0 else 1e-9
                 pl_pct = (pos["realized_pl_accum"] / total_cost_basis) * 100
                 state["closed_trades"].append({
@@ -257,7 +210,6 @@ def rebalance(state, target_weights, prices, run_date):
 
         state["positions"][ticker] = pos
 
-    # drop fully-flat positions from the live dict so the dashboard only sees open ones
     state["positions"] = {t: p for t, p in state["positions"].items() if p["shares"] > 1e-6}
     state["last_run"] = run_date
     return state
@@ -299,7 +251,6 @@ def compute_metrics(state, prices, spy_price):
     best = max((t["pl_pct"] for t in closed), default=0.0)
     worst = min((t["pl_pct"] for t in closed), default=0.0)
 
-    # Benchmark: what $STARTING_CAPITAL buy-and-hold in SPY since day 1 would be worth
     if state.get("spy_shares_ref") is None and spy_price:
         state["spy_shares_ref"] = state["starting_capital"] / spy_price
     spy_equity = (state["spy_shares_ref"] * spy_price) if state.get("spy_shares_ref") and spy_price else None
@@ -363,34 +314,12 @@ def run():
                 return json.load(f)
         return None
 
-  print("Fetching latest price history (fast batch mode)...")
-  
-  # 1. Create a session that impersonates a real Chrome browser
-  session = requests.Session(impersonate="chrome")
-  
-  # 2. Download all tickers at once using the custom session
-  data = yf.download(
-      tickers=TICKERS,
-      period="5d",
-      interval="1d",
-      session=session,
-      progress=False
-  )
-  
-  # 3. Extract the latest closing prices safely
-  close_df = data['Close']
-  prices = {}
-  for t in TICKERS:
-      # Handles both single-level and multi-level DataFrames
-      ticker_series = close_df[t] if t in close_df else close_df
-      valid_prices = ticker_series.dropna()
-      
-      if not valid_prices.empty:
-          prices[t] = float(valid_prices.iloc[-1])
-      else:
-          print(f"Warning: Could not find valid price for {t}")
-  
-  print("Fetched prices:", prices)
+    print("Fetching latest price history (fast batch mode)...")
+    close_df = fetch_price_history()
+
+    prices = {t: float(close_df[t].dropna().iloc[-1]) for t in TICKERS if t in close_df}
+    spy_price = float(close_df[BENCHMARK].dropna().iloc[-1]) if BENCHMARK in close_df else None
+    print("Fetched prices:", prices)
 
     print("Computing today's target allocation from the signal engine...")
     target_weights = compute_target_weights_today(close_df)
@@ -419,8 +348,8 @@ def status():
         return
     print("Fetching latest prices for a read-only status check...")
     close_df = fetch_price_history()
-    prices = {t: float(close_df[t].iloc[-1]) for t in TICKERS}
-    spy_price = float(close_df[BENCHMARK].iloc[-1])
+    prices = {t: float(close_df[t].dropna().iloc[-1]) for t in TICKERS}
+    spy_price = float(close_df[BENCHMARK].dropna().iloc[-1])
     positions_out, metrics, equity, spy_equity = compute_metrics(state, prices, spy_price)
     print_summary(metrics, state["last_run"])
 

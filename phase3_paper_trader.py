@@ -37,6 +37,7 @@ import argparse
 import json
 import os
 from datetime import datetime, date
+from curl_cffi import requests
 
 import numpy as np
 import pandas as pd
@@ -362,10 +363,34 @@ def run():
                 return json.load(f)
         return None
 
-    print("Fetching latest price history (requires real internet access)...")
-    close_df = fetch_price_history()
-    prices = {t: float(close_df[t].iloc[-1]) for t in TICKERS}
-    spy_price = float(close_df[BENCHMARK].iloc[-1])
+  print("Fetching latest price history (fast batch mode)...")
+  
+  # 1. Create a session that impersonates a real Chrome browser
+  session = requests.Session(impersonate="chrome")
+  
+  # 2. Download all tickers at once using the custom session
+  data = yf.download(
+      tickers=TICKERS,
+      period="5d",
+      interval="1d",
+      session=session,
+      progress=False
+  )
+  
+  # 3. Extract the latest closing prices safely
+  close_df = data['Close']
+  prices = {}
+  for t in TICKERS:
+      # Handles both single-level and multi-level DataFrames
+      ticker_series = close_df[t] if t in close_df else close_df
+      valid_prices = ticker_series.dropna()
+      
+      if not valid_prices.empty:
+          prices[t] = float(valid_prices.iloc[-1])
+      else:
+          print(f"Warning: Could not find valid price for {t}")
+  
+  print("Fetched prices:", prices)
 
     print("Computing today's target allocation from the signal engine...")
     target_weights = compute_target_weights_today(close_df)

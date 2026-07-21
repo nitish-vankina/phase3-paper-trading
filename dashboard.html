@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 3 — Trend Ensemble Paper Trading Monitor</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  html, body{ margin:0; background:#0A0D14; }
+  :root{
+    --bg: #0A0D14;
+    --panel: #121722;
+    --panel-2: #161C29;
+    --border: #232B3A;
+    --text: #E7EAF1;
+    --muted: #838DA3;
+    --dim: #56607A;
+    --accent: #4FD1C5;
+    --accent-dim: rgba(79,209,197,0.12);
+    --gain: #34D399;
+    --gain-dim: rgba(52,211,153,0.12);
+    --loss: #FB7185;
+    --loss-dim: rgba(251,113,133,0.12);
+    --amber: #F0B429;
+    --amber-dim: rgba(240,180,41,0.12);
+    --radius: 10px;
+    --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+  }
+  *{box-sizing:border-box;}
+  .p3-root{
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    border-radius: 16px;
+    padding: 20px;
+    min-height: 100%;
+    -webkit-font-smoothing: antialiased;
+  }
+  .p3-root ::selection{ background: var(--accent-dim); }
+
+  /* ---------- header ---------- */
+  .p3-header{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:16px; flex-wrap:wrap;
+    padding-bottom:16px; margin-bottom:16px;
+    border-bottom:1px solid var(--border);
+  }
+  .p3-title-block{ display:flex; align-items:center; gap:12px; }
+  .p3-mark{
+    width:34px; height:34px; border-radius:8px;
+    background: linear-gradient(135deg, var(--accent), #2C9A90);
+    display:flex; align-items:center; justify-content:center;
+    font-family: var(--font-display); font-weight:700; font-size:15px; color:#04211E;
+    flex-shrink:0;
+  }
+  .p3-title h1{
+    font-family: var(--font-display); font-size:17px; font-weight:600;
+    margin:0; letter-spacing:0.01em; line-height:1.2;
+  }
+  .p3-title .sub{
+    font-size:11.5px; color:var(--muted); font-family: var(--font-mono);
+    margin-top:2px; letter-spacing:0.02em;
+  }
+  .p3-status{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:11px; font-family:var(--font-mono); padding:3px 9px 3px 7px;
+    border-radius:100px; border:1px solid var(--border); color:var(--muted);
+    margin-left:10px;
+  }
+  .p3-dot{ width:6px; height:6px; border-radius:50%; background:var(--dim); }
+  .p3-status.live .p3-dot{ background:var(--gain); box-shadow:0 0 0 3px var(--gain-dim); animation:pulse 2s infinite; }
+  .p3-status.demo .p3-dot{ background:var(--amber); box-shadow:0 0 0 3px var(--amber-dim); }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.45;} }
+
+  .p3-controls{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .p3-btn{
+    font-family:var(--font-body); font-size:12.5px; font-weight:600;
+    padding:8px 13px; border-radius:8px; border:1px solid var(--border);
+    background: var(--panel-2); color:var(--text); cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px;
+    transition: border-color .15s, background .15s;
+  }
+  .p3-btn:hover{ border-color:var(--accent); background:#182130; }
+  .p3-btn.primary{ background:var(--accent); color:#04211E; border-color:var(--accent); }
+  .p3-btn.primary:hover{ background:#68DED3; }
+  .p3-btn.ghost{ background:transparent; }
+  .p3-btn.danger:hover{ border-color:var(--loss); color:var(--loss); }
+  .p3-btn input[type=file]{ display:none; }
+
+  /* ---------- tabs ---------- */
+  .p3-tabs{ display:flex; gap:4px; margin-bottom:18px; border-bottom:1px solid var(--border); }
+  .p3-tab{
+    font-family:var(--font-display); font-size:13px; font-weight:600; color:var(--muted);
+    background:none; border:none; padding:9px 4px; margin-right:22px; cursor:pointer;
+    border-bottom:2px solid transparent; letter-spacing:0.01em;
+  }
+  .p3-tab.active{ color:var(--text); border-bottom-color:var(--accent); }
+
+  /* ---------- kpi strip ---------- */
+  .p3-kpis{
+    display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:16px;
+  }
+  @media (max-width:900px){ .p3-kpis{ grid-template-columns:repeat(3,1fr);} }
+  @media (max-width:560px){ .p3-kpis{ grid-template-columns:repeat(2,1fr);} }
+  .p3-kpi{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:12px 13px;
+  }
+  .p3-kpi .lbl{ font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
+  .p3-kpi .val{ font-family:var(--font-mono); font-size:18px; font-weight:600; line-height:1.1; }
+  .p3-kpi .sub{ font-family:var(--font-mono); font-size:11px; color:var(--muted); margin-top:4px; }
+  .p3-kpi .val.gain, .p3-kpi .sub.gain{ color:var(--gain); }
+  .p3-kpi .val.loss, .p3-kpi .sub.loss{ color:var(--loss); }
+
+  /* ---------- layout grid ---------- */
+  .p3-grid{ display:grid; grid-template-columns:1.6fr 1fr; gap:12px; align-items:start; }
+  @media (max-width:900px){ .p3-grid{ grid-template-columns:1fr; } }
+  .p3-panel{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px; margin-bottom:12px;
+  }
+  .p3-panel h2{
+    font-family:var(--font-display); font-size:12.5px; font-weight:600;
+    text-transform:uppercase; letter-spacing:0.07em; color:var(--muted);
+    margin:0 0 12px 0; display:flex; align-items:center; justify-content:space-between;
+  }
+  .p3-panel h2 .as-of{ text-transform:none; letter-spacing:0; font-family:var(--font-mono); font-size:11px; color:var(--dim); }
+  .chart-wrap{ position:relative; height:260px; }
+
+  /* ---------- signal strip (signature element) ---------- */
+  .signal-row{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .signal-row:last-child{ margin-bottom:0; }
+  .signal-tkr{ font-family:var(--font-mono); font-size:12px; font-weight:600; width:44px; flex-shrink:0; }
+  .signal-track{
+    flex:1; height:8px; border-radius:5px; background:var(--panel-2);
+    border:1px solid var(--border); overflow:hidden; position:relative;
+  }
+  .signal-fill{
+    height:100%; border-radius:5px;
+    background:linear-gradient(90deg, var(--accent-dim), var(--accent));
+    transition: width .5s ease;
+  }
+  .signal-pct{ font-family:var(--font-mono); font-size:11.5px; color:var(--muted); width:42px; text-align:right; flex-shrink:0; }
+  .signal-empty{ color:var(--dim); font-size:12px; font-family:var(--font-mono); }
+
+  /* ---------- tables ---------- */
+  table.p3-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.p3-table th{
+    text-align:left; font-family:var(--font-body); font-weight:600; color:var(--muted);
+    font-size:10.5px; text-transform:uppercase; letter-spacing:0.05em;
+    padding:0 8px 8px 8px; border-bottom:1px solid var(--border);
+  }
+  table.p3-table td{
+    padding:9px 8px; border-bottom:1px solid var(--border); font-family:var(--font-mono);
+    white-space:nowrap;
+  }
+  table.p3-table tbody tr:hover{ background:var(--panel-2); }
+  table.p3-table tbody tr:last-child td{ border-bottom:none; }
+  .tkr-badge{
+    display:inline-flex; align-items:center; justify-content:center;
+    font-family:var(--font-mono); font-weight:600; font-size:11.5px;
+    padding:2px 7px; border-radius:5px; background:var(--panel-2); border:1px solid var(--border);
+  }
+  .pill{ display:inline-block; padding:2px 8px; border-radius:100px; font-size:10.5px; font-family:var(--font-mono); font-weight:600; }
+  .pill.win{ background:var(--gain-dim); color:var(--gain); }
+  .pill.loss{ background:var(--loss-dim); color:var(--loss); }
+  .table-scroll{ max-height:280px; overflow-y:auto; }
+  .gain-text{ color:var(--gain); } .loss-text{ color:var(--loss); }
+
+  /* ---------- empty state ---------- */
+  .p3-empty{
+    text-align:center; padding:56px 20px; color:var(--muted);
+  }
+  .p3-empty .icon{ font-size:26px; margin-bottom:12px; opacity:0.6; }
+  .p3-empty h3{ font-family:var(--font-display); color:var(--text); font-size:15px; margin:0 0 8px 0; }
+  .p3-empty p{ font-size:12.5px; max-width:420px; margin:0 auto 18px auto; line-height:1.6; }
+  .p3-empty .actions{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+
+  /* ---------- manual journal form ---------- */
+  .p3-form{ display:grid; grid-template-columns:1.1fr 0.8fr 1fr 1fr 1fr auto; gap:8px; align-items:end; }
+  @media (max-width:760px){ .p3-form{ grid-template-columns:1fr 1fr; } }
+  .p3-field label{ display:block; font-size:10px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:5px; }
+  .p3-field input, .p3-field select{
+    width:100%; background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+    border-radius:7px; padding:8px 9px; font-family:var(--font-mono); font-size:12.5px;
+  }
+  .p3-field input:focus, .p3-field select:focus{ outline:none; border-color:var(--accent); }
+  .p3-hint{ font-size:11.5px; color:var(--dim); margin-top:10px; line-height:1.6; }
+  .p3-settings-row{ display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+  .p3-settings-row .p3-field{ width:150px; }
+
+  .p3-footer{ margin-top:6px; font-size:11px; color:var(--dim); line-height:1.6; text-align:center; padding-top:14px; }
+  .p3-toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+    padding:10px 16px; border-radius:8px; font-size:12.5px; font-family:var(--font-body);
+    opacity:0; transition:opacity .25s, transform .25s; pointer-events:none; z-index:50;
+  }
+  .p3-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* ---------- status pill: imported/offline variant ---------- */
+  .p3-status.imported .p3-dot{ background:var(--accent); box-shadow:0 0 0 3px var(--accent-dim); }
+  .p3-status.offline .p3-dot{ background:var(--loss); box-shadow:0 0 0 3px var(--loss-dim); }
+  .p3-refresh-spin{ animation: spin 0.8s linear infinite; display:inline-block; }
+  @keyframes spin{ from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
+</style>
+</head>
+<body>
+
+<div class="p3-root">
+  <div class="p3-header">
+    <div class="p3-title-block">
+      <div class="p3-mark">P3</div>
+      <div class="p3-title">
+        <h1>Phase 3 — Trend Ensemble <span id="statusPill" class="p3-status"><span class="p3-dot"></span><span id="statusText">no data</span></span></h1>
+        <div class="sub" id="asOfLine">paper trading monitor — no real money, no live orders</div>
+      </div>
+    </div>
+    <div class="p3-controls" id="engineControls">
+      <span class="p3-hint" id="lastChecked" style="margin-right:2px;"></span>
+      <button class="p3-btn ghost" id="refreshBtn">↻ Refresh</button>
+      <label class="p3-btn ghost">📥 Import JSON<input type="file" id="fileInput" accept="application/json"></label>
+      <button class="p3-btn ghost" id="demoBtn">▶ Load demo data</button>
+    </div>
+  </div>
+
+  <div class="p3-tabs">
+    <button class="p3-tab active" data-tab="engine">Engine Feed</button>
+    <button class="p3-tab" data-tab="manual">Manual Journal</button>
+  </div>
+
+  <!-- ============ ENGINE TAB ============ -->
+  <div id="tab-engine">
+    <div id="engineEmpty" class="p3-empty">
+      <div class="icon">◇</div>
+      <h3 id="engineEmptyTitle">Waiting on the first run</h3>
+      <p id="engineEmptyBody">A scheduled job rebalances and reports in automatically once a day, shortly after the U.S. market closes, and this page just reads the file it produces. Nothing to do here — check back after the close, hit Refresh, or load sample data to see how the monitor looks in the meantime.</p>
+      <div class="actions">
+        <button class="p3-btn primary" id="refreshBtnEmpty">↻ Refresh</button>
+        <label class="p3-btn">📥 Import JSON<input type="file" id="fileInputEmpty" accept="application/json"></label>
+        <button class="p3-btn" id="demoBtnEmpty">▶ Load demo data</button>
+      </div>
+    </div>
+
+    <div id="engineContent" style="display:none;">
+      <div class="p3-kpis" id="engineKpis"></div>
+      <div class="p3-grid">
+        <div>
+          <div class="p3-panel">
+            <h2>Equity — Strategy vs. <span id="benchName">SPY</span> <span class="as-of" id="chartAsOf"></span></h2>
+            <div class="chart-wrap" id="equityChart"></div>
+          </div>
+          <div class="p3-panel">
+            <h2>Trade Blotter — Closed Round Trips</h2>
+            <div class="table-scroll">
+              <table class="p3-table">
+                <thead><tr><th>Ticker</th><th>Opened</th><th>Closed</th><th>P/L $</th><th>P/L %</th><th>Result</th></tr></thead>
+                <tbody id="tradesBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="p3-panel">
+            <h2>Today's Signal <span class="as-of" id="signalAsOf"></span></h2>
+            <div id="signalStrip"></div>
+          </div>
+          <div class="p3-panel">
+            <h2>Open Positions</h2>
+            <div class="table-scroll">
+              <table class="p3-table">
+                <thead><tr><th>Tkr</th><th>Shares</th><th>Avg Cost</th><th>Last</th><th>Val</th><th>Unreal.</th><th>Wt%</th></tr></thead>
+                <tbody id="positionsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MANUAL TAB ============ -->
+  <div id="tab-manual" style="display:none;">
+    <div class="p3-panel">
+      <h2>Log a Paper Trade</h2>
+      <div class="p3-settings-row">
+        <div class="p3-field"><label>Starting capital $</label><input type="number" id="manStartCap" value="1000" min="1" step="1"></div>
+        <button class="p3-btn ghost" id="manSaveSettings">Update</button>
+        <button class="p3-btn ghost" id="manExportCsv">⬇ Export CSV</button>
+        <button class="p3-btn ghost danger" id="manResetBtn">Reset journal</button>
+      </div>
+      <form class="p3-form" id="manTradeForm">
+        <div class="p3-field"><label>Symbol</label><input type="text" id="manSymbol" placeholder="e.g. NVDA" required></div>
+        <div class="p3-field"><label>Side</label>
+          <select id="manSide"><option value="buy">Buy</option><option value="sell">Sell</option></select>
+        </div>
+        <div class="p3-field"><label>Quantity</label><input type="number" id="manQty" placeholder="shares" min="0" step="any" required></div>
+        <div class="p3-field"><label>Price $</label><input type="number" id="manPrice" placeholder="fill price" min="0" step="any" required></div>
+        <div class="p3-field"><label>Date</label><input type="date" id="manDate" required></div>
+        <button type="submit" class="p3-btn primary">+ Log trade</button>
+      </form>
+      <div class="p3-hint">Buys add to your position at the blended average cost. Sells realize P/L against that average cost and — once a symbol is back to zero shares — close out a round trip that counts toward win rate. A 0.05% friction cost is applied per trade, same as the engine's backtest.</div>
+    </div>
+
+    <div id="manualEmpty" class="p3-empty">
+      <div class="icon">◇</div>
+      <h3>No paper trades logged yet</h3>
+      <p>Use the form above to log your first buy. This journal lives entirely in your browser (saved locally to this artifact) — nothing is sent anywhere.</p>
+    </div>
+
+    <div id="manualContent" style="display:none;">
+      <div class="p3-kpis" id="manualKpis"></div>
+      <div class="p3-grid">
+        <div>
+          <div class="p3-panel">
+            <h2>Equity Curve</h2>
+            <div class="chart-wrap" id="manualChart"></div>
+          </div>
+          <div class="p3-panel">
+            <h2>Closed Round Trips</h2>
+            <div class="table-scroll">
+              <table class="p3-table">
+                <thead><tr><th>Symbol</th><th>Opened</th><th>Closed</th><th>P/L $</th><th>P/L %</th><th>Result</th></tr></thead>
+                <tbody id="manClosedBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="p3-panel">
+            <h2>Open Positions</h2>
+            <div class="table-scroll">
+              <table class="p3-table">
+                <thead><tr><th>Sym</th><th>Shares</th><th>Avg Cost</th><th>Mark</th><th>Unreal.</th></tr></thead>
+                <tbody id="manPosBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="p3-panel">
+            <h2>All Logged Trades</h2>
+            <div class="table-scroll">
+              <table class="p3-table">
+                <thead><tr><th>Date</th><th>Sym</th><th>Side</th><th>Qty</th><th>Price</th></tr></thead>
+                <tbody id="manRawBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="p3-footer">
+    Paper trading only — simulated fills, no brokerage connection, no real money. Not investment advice.
+    TQQQ, UPRO and IBIT carry leveraged / concentrated risk well beyond a typical index fund.
+    <br>Rebalances automatically once per trading day via a scheduled job, after the U.S. market closes.
+  </div>
+</div>
+
+<div class="p3-toast" id="toast"></div>
+
+<script>
+(function(){
+  const $ = (id) => document.getElementById(id);
+  const fmtMoney = (n) => (n<0?'-$':'$') + Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmtPct = (n) => (n>0?'+':'') + n.toFixed(2) + '%';
+  const todayStr = () => new Date().toISOString().slice(0,10);
+  let toastTimer;
+  function toast(msg){
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), 2600);
+  }
+
+  // ---------------- storage helpers (manual journal only — persisted in this browser) ----------------
+  async function storeGet(key){
+    try{ const v = localStorage.getItem('p3:'+key); return v ? JSON.parse(v) : null; }
+    catch(e){ return null; }
+  }
+  async function storeSet(key, obj){
+    try{ localStorage.setItem('p3:'+key, JSON.stringify(obj)); return true; }
+    catch(e){ console.error('storage set failed', e); toast('Could not save — storage error'); return false; }
+  }
+  async function storeDelete(key){ try{ localStorage.removeItem('p3:'+key); }catch(e){} }
+
+  // ================= TAB SWITCHING =================
+  document.querySelectorAll('.p3-tab').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.p3-tab').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      $('tab-engine').style.display = tab==='engine' ? '' : 'none';
+      $('tab-manual').style.display = tab==='manual' ? '' : 'none';
+      $('engineControls').style.display = tab==='engine' ? '' : 'none';
+    });
+  });
+
+  // ================= SVG LINE CHART (no external deps) =================
+  function fmtAxisVal(v){ return '$' + Math.round(v).toLocaleString(); }
+  function buildLineChartSVG(labels, series, height){
+    const H = height || 260, W = 640;
+    const padL = 56, padR = 12, padT = 12, padB = 24;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const allVals = [];
+    series.forEach(s => s.data.forEach(v => { if (v != null && !isNaN(v)) allVals.push(v); }));
+    if (allVals.length < 2) return '<div class="signal-empty">Not enough data points yet</div>';
+    let minV = Math.min(...allVals), maxV = Math.max(...allVals);
+    if (minV === maxV) { minV -= 1; maxV += 1; }
+    const pad = (maxV - minV) * 0.1;
+    minV -= pad; maxV += pad;
+    const n = labels.length;
+    const xAt = i => padL + (n <= 1 ? plotW / 2 : (plotW * i / (n - 1)));
+    const yAt = v => padT + plotH - ((v - minV) / (maxV - minV)) * plotH;
+
+    let grid = '';
+    for (let g = 0; g <= 4; g++) {
+      const v = minV + (maxV - minV) * g / 4;
+      const y = yAt(v);
+      grid += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="#1A2130" stroke-width="1"/>`;
+      grid += `<text x="${padL - 8}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9.5" fill="#56607A" style="font-family:'IBM Plex Mono',monospace;">${fmtAxisVal(v)}</text>`;
+    }
+    let xLabels = '';
+    const tickCount = Math.min(6, n);
+    for (let k = 0; k < tickCount; k++) {
+      const idx = Math.round(k * (n - 1) / Math.max(tickCount - 1, 1));
+      xLabels += `<text x="${xAt(idx).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9.5" fill="#56607A" style="font-family:'IBM Plex Mono',monospace;">${labels[idx]}</text>`;
+    }
+    let paths = '';
+    series.forEach(s => {
+      const pts = s.data.map((v, i) => (v == null || isNaN(v)) ? null : [xAt(i), yAt(v)]).filter(Boolean);
+      if (pts.length < 2) return;
+      const d = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+      if (s.fill) {
+        const floorY = (padT + plotH).toFixed(1);
+        const areaD = d + ` L${pts[pts.length - 1][0].toFixed(1)},${floorY} L${pts[0][0].toFixed(1)},${floorY} Z`;
+        paths += `<path d="${areaD}" fill="${s.color}" opacity="0.10" stroke="none"/>`;
+      }
+      paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" ${s.dashed ? 'stroke-dasharray="5,4"' : ''} stroke-linejoin="round" stroke-linecap="round"/>`;
+      const last = pts[pts.length - 1];
+      paths += `<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3" fill="${s.color}"/>`;
+    });
+    let legend = '<div style="display:flex;flex-wrap:wrap;gap:4px 16px;margin-bottom:8px;">';
+    series.forEach(s => {
+      legend += `<span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:2.5px;background:${s.color};display:inline-block;border-radius:2px;"></span><span style="font-family:Inter,sans-serif;font-size:11px;color:#E7EAF1;">${s.name}</span></span>`;
+    });
+    legend += '</div>';
+    return `${legend}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block;">${grid}${paths}${xLabels}</svg>`;
+  }
+
+  // ================= ENGINE FEED =================
+  function renderEngine(data){
+    if(!data){
+      $('engineEmpty').style.display = '';
+      $('engineContent').style.display = 'none';
+      $('statusPill').className = 'p3-status';
+      $('statusText').textContent = 'no data';
+      $('asOfLine').textContent = 'paper trading monitor — no real money, no live orders';
+      return;
+    }
+    $('engineEmpty').style.display = 'none';
+    $('engineContent').style.display = '';
+    const source = data.__source || 'live'; // 'live' | 'demo' | 'imported'
+    const pillClass = source === 'live' ? 'live' : (source === 'demo' ? 'demo' : 'imported');
+    const pillText = source === 'live' ? 'live' : (source === 'demo' ? 'demo data' : 'imported file');
+    const prefix = source === 'live' ? '' : (source === 'demo' ? 'sample data — ' : 'imported file — ');
+    $('statusPill').className = 'p3-status ' + pillClass;
+    $('statusText').textContent = pillText;
+    $('asOfLine').textContent = prefix + 'as of ' + data.as_of;
+    $('benchName').textContent = data.benchmark || 'SPY';
+    $('chartAsOf').textContent = 'as of ' + data.as_of;
+    $('signalAsOf').textContent = data.as_of;
+
+    const m = data.metrics || {};
+    const kpis = [
+      {lbl:'Equity', val: fmtMoney(m.total_equity||0), cls:''},
+      {lbl:'Total P/L', val: fmtMoney(m.total_pl||0), sub: fmtPct(m.total_pl_pct||0), cls: (m.total_pl>=0?'gain':'loss')},
+      {lbl:'Win Rate', val: (m.win_rate_pct||0).toFixed(1)+'%', sub: (m.num_wins||0)+'W / '+(m.num_losses||0)+'L', cls:''},
+      {lbl:'Closed Trades', val: (m.num_closed_trades||0), sub: (data.positions||[]).length+' open', cls:''},
+      {lbl:'Best Trade', val: fmtPct(m.best_trade_pct||0), cls:'gain'},
+      {lbl:'vs '+(data.benchmark||'SPY'), val: m.spy_total_pl_pct!=null? fmtPct((m.total_pl_pct||0)-m.spy_total_pl_pct) : '—', sub: m.spy_total_pl_pct!=null? ('bench '+fmtPct(m.spy_total_pl_pct)) : 'no benchmark', cls: m.spy_total_pl_pct!=null ? (((m.total_pl_pct||0)-m.spy_total_pl_pct)>=0?'gain':'loss') : ''},
+    ];
+    $('engineKpis').innerHTML = kpis.map(k=>`
+      <div class="p3-kpi"><div class="lbl">${k.lbl}</div><div class="val ${k.cls}">${k.val}</div>${k.sub?`<div class="sub ${k.cls}">${k.sub}</div>`:''}</div>
+    `).join('');
+
+    // signal strip
+    const tw = data.target_weights_today || {};
+    const tickers = data.tickers || Object.keys(tw);
+    if(Object.keys(tw).length===0){
+      $('signalStrip').innerHTML = '<div class="signal-empty">No signal snapshot in this file — target_weights_today was empty.</div>';
+    } else {
+      $('signalStrip').innerHTML = tickers.map(t=>{
+        const w = (tw[t]||0)*100;
+        return `<div class="signal-row">
+          <div class="signal-tkr">${t}</div>
+          <div class="signal-track"><div class="signal-fill" style="width:${Math.min(w,100)}%"></div></div>
+          <div class="signal-pct">${w.toFixed(1)}%</div>
+        </div>`;
+      }).join('');
+    }
+
+    // positions
+    const pos = data.positions || [];
+    $('positionsBody').innerHTML = pos.length ? pos.map(p=>`
+      <tr>
+        <td><span class="tkr-badge">${p.ticker}</span></td>
+        <td>${(p.shares||0).toFixed(3)}</td>
+        <td>${fmtMoney(p.avg_cost||0)}</td>
+        <td>${fmtMoney(p.last_price||0)}</td>
+        <td>${fmtMoney(p.market_value||0)}</td>
+        <td class="${(p.unrealized_pl||0)>=0?'gain-text':'loss-text'}">${fmtMoney(p.unrealized_pl||0)}</td>
+        <td>${(p.weight_pct||0).toFixed(1)}%</td>
+      </tr>`).join('') : '<tr><td colspan="7" style="color:var(--dim);">No open positions</td></tr>';
+
+    // trades
+    const trades = (data.closed_trades || []).slice().reverse();
+    $('tradesBody').innerHTML = trades.length ? trades.map(t=>`
+      <tr>
+        <td><span class="tkr-badge">${t.ticker}</span></td>
+        <td>${t.open_date||'—'}</td>
+        <td>${t.close_date||'—'}</td>
+        <td class="${t.pl>=0?'gain-text':'loss-text'}">${fmtMoney(t.pl||0)}</td>
+        <td class="${t.pl_pct>=0?'gain-text':'loss-text'}">${fmtPct(t.pl_pct||0)}</td>
+        <td><span class="pill ${t.win?'win':'loss'}">${t.win?'WIN':'LOSS'}</span></td>
+      </tr>`).join('') : '<tr><td colspan="6" style="color:var(--dim);">No closed trades yet</td></tr>';
+
+    // chart
+    const curve = data.equity_curve || [];
+    const labels = curve.map(c=>c.date);
+    const eq = curve.map(c=>c.equity);
+    const spy = curve.map(c=>c.spy_equity);
+    $('equityChart').innerHTML = buildLineChartSVG(labels, [
+      { name:'Phase 3 Paper', data:eq, color:'#4FD1C5', fill:true },
+      { name:(data.benchmark||'SPY')+' buy&hold', data:spy, color:'#838DA3', dashed:true },
+    ], 260);
+  }
+
+  // ---------------- live engine data (a static JSON file kept up to date by a scheduled GitHub Action) ----------------
+  let viewingOverride = false; // true while showing demo/imported data instead of the live feed
+
+  function setLastChecked(){
+    const now = new Date();
+    $('lastChecked').textContent = 'checked ' + now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  }
+
+  async function fetchLiveData(){
+    try{
+      // Cache-busting query param so the static host's CDN doesn't serve a stale copy.
+      const res = await fetch('dashboard_data.json?t=' + Date.now(), {cache:'no-store'});
+      setLastChecked();
+      if(res.status === 404){
+        return {ok:true, data:null}; // no run yet — expected before the first scheduled job
+      }
+      if(!res.ok){
+        throw new Error('HTTP ' + res.status);
+      }
+      const data = await res.json();
+      data.__source = 'live';
+      return {ok:true, data};
+    }catch(err){
+      setLastChecked();
+      return {ok:false, error: err};
+    }
+  }
+
+  async function loadLive({silent} = {}){
+    const {ok, data, error} = await fetchLiveData();
+    if(!ok){
+      if(!silent){
+        $('statusPill').className = 'p3-status offline';
+        $('statusText').textContent = 'offline';
+        toast('Could not load dashboard_data.json — has the GitHub Action run yet?');
+      }
+      // If we have nothing else on screen yet, still show the empty state.
+      if(!viewingOverride && $('engineContent').style.display === 'none'){
+        renderEngine(null);
+      }
+      return;
+    }
+    viewingOverride = false;
+    renderEngine(data);
+    if(!silent && data) toast('Refreshed');
+  }
+
+  $('refreshBtn').addEventListener('click', ()=>loadLive());
+  $('refreshBtnEmpty').addEventListener('click', ()=>loadLive());
+
+  // Quietly re-check every 5 minutes in case the daily job just ran, but only
+  // while the person is actually looking at the live feed (not demo/import).
+  setInterval(()=>{ if(!viewingOverride) loadLive({silent:true}); }, 5*60*1000);
+
+  function handleFile(file){
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try{
+        const data = JSON.parse(e.target.result);
+        data.__source = 'imported';
+        viewingOverride = true;
+        renderEngine(data);
+        toast('Imported ' + file.name);
+      }catch(err){
+        toast('Could not parse that file as JSON');
+      }
+    };
+    reader.readAsText(file);
+  }
+  $('fileInput').addEventListener('change', (e)=>handleFile(e.target.files[0]));
+  $('fileInputEmpty').addEventListener('change', (e)=>handleFile(e.target.files[0]));
+
+  const DEMO_DATA = {"engine_name": "Phase 3: Trend Ensemble", "tickers": ["NVDA", "TQQQ", "SMH", "USD", "IBIT", "UPRO"], "benchmark": "SPY", "starting_capital": 1000.0, "as_of": "2025-12-30", "positions": [{"ticker": "USD", "shares": 3.9913, "avg_cost": 142.81, "last_price": 169.72, "market_value": 677.4, "unrealized_pl": 107.42, "unrealized_pl_pct": 18.85, "weight_pct": 57.38}, {"ticker": "SMH", "shares": 1.6303, "avg_cost": 289.94, "last_price": 308.08, "market_value": 502.26, "unrealized_pl": 29.57, "unrealized_pl_pct": 6.26, "weight_pct": 42.54}], "closed_trades": [{"ticker": "SMH", "open_date": "2025-10-09", "close_date": "2025-10-13", "pl": -6.0, "pl_pct": -0.78, "win": false}, {"ticker": "NVDA", "open_date": "2025-10-13", "close_date": "2025-10-14", "pl": -9.0, "pl_pct": -2.03, "win": false}, {"ticker": "UPRO", "open_date": "2025-10-08", "close_date": "2025-10-14", "pl": -21.06, "pl_pct": -3.15, "win": false}, {"ticker": "USD", "open_date": "2025-10-14", "close_date": "2025-10-16", "pl": -17.83, "pl_pct": -3.05, "win": false}, {"ticker": "UPRO", "open_date": "2025-10-16", "close_date": "2025-10-21", "pl": 2.31, "pl_pct": 0.5, "win": true}, {"ticker": "NVDA", "open_date": "2025-10-21", "close_date": "2025-11-03", "pl": 20.71, "pl_pct": 3.6, "win": true}, {"ticker": "USD", "open_date": "2025-11-03", "close_date": "2025-11-05", "pl": 10.45, "pl_pct": 1.77, "win": true}, {"ticker": "NVDA", "open_date": "2025-11-05", "close_date": "2025-11-06", "pl": -15.22, "pl_pct": -2.76, "win": false}, {"ticker": "USD", "open_date": "2025-11-06", "close_date": "2025-11-11", "pl": -18.8, "pl_pct": -2.93, "win": false}, {"ticker": "TQQQ", "open_date": "2025-11-11", "close_date": "2025-11-13", "pl": -14.05, "pl_pct": -2.71, "win": false}, {"ticker": "UPRO", "open_date": "2025-11-13", "close_date": "2025-11-14", "pl": -6.63, "pl_pct": -1.24, "win": false}, {"ticker": "TQQQ", "open_date": "2025-11-14", "close_date": "2025-11-25", "pl": -8.17, "pl_pct": -1.23, "win": false}, {"ticker": "SMH", "open_date": "2025-10-14", "close_date": "2025-11-28", "pl": 83.86, "pl_pct": 9.92, "win": true}], "equity_curve": [{"date": "2025-10-08", "equity": 1000.0, "spy_equity": 1000.0}, {"date": "2025-10-09", "equity": 998.63, "spy_equity": 1010.9}, {"date": "2025-10-10", "equity": 1004.2, "spy_equity": 1002.88}, {"date": "2025-10-13", "equity": 982.96, "spy_equity": 986.59}, {"date": "2025-10-14", "equity": 961.89, "spy_equity": 978.93}, {"date": "2025-10-15", "equity": 959.55, "spy_equity": 977.78}, {"date": "2025-10-16", "equity": 955.34, "spy_equity": 970.48}, {"date": "2025-10-17", "equity": 967.45, "spy_equity": 939.92}, {"date": "2025-10-20", "equity": 977.55, "spy_equity": 954.08}, {"date": "2025-10-21", "equity": 971.74, "spy_equity": 973.85}, {"date": "2025-10-22", "equity": 990.38, "spy_equity": 984.92}, {"date": "2025-10-23", "equity": 1002.37, "spy_equity": 969.69}, {"date": "2025-10-24", "equity": 1032.06, "spy_equity": 968.31}, {"date": "2025-10-27", "equity": 1030.56, "spy_equity": 969.77}, {"date": "2025-10-28", "equity": 1047.19, "spy_equity": 980.03}, {"date": "2025-10-29", "equity": 1056.53, "spy_equity": 991.42}, {"date": "2025-10-30", "equity": 1043.25, "spy_equity": 982.09}, {"date": "2025-10-31", "equity": 1036.51, "spy_equity": 984.87}, {"date": "2025-11-03", "equity": 1028.94, "spy_equity": 993.2}, {"date": "2025-11-04", "equity": 1038.66, "spy_equity": 1016.48}, {"date": "2025-11-05", "equity": 1049.17, "spy_equity": 1028.84}, {"date": "2025-11-06", "equity": 1027.16, "spy_equity": 1042.67}, {"date": "2025-11-07", "equity": 1024.53, "spy_equity": 1045.65}, {"date": "2025-11-10", "equity": 1039.0, "spy_equity": 1069.44}, {"date": "2025-11-11", "equity": 1046.02, "spy_equity": 1077.73}, {"date": "2025-11-12", "equity": 1047.04, "spy_equity": 1065.53}, {"date": "2025-11-13", "equity": 1038.07, "spy_equity": 1089.67}, {"date": "2025-11-14", "equity": 1032.7, "spy_equity": 1102.82}, {"date": "2025-11-17", "equity": 1041.24, "spy_equity": 1097.25}, {"date": "2025-11-18", "equity": 1041.09, "spy_equity": 1091.12}, {"date": "2025-11-19", "equity": 1020.51, "spy_equity": 1097.72}, {"date": "2025-11-20", "equity": 1010.92, "spy_equity": 1107.1}, {"date": "2025-11-21", "equity": 1014.27, "spy_equity": 1112.15}, {"date": "2025-11-24", "equity": 1017.52, "spy_equity": 1119.12}, {"date": "2025-11-25", "equity": 1002.09, "spy_equity": 1149.45}, {"date": "2025-11-26", "equity": 1020.26, "spy_equity": 1169.76}, {"date": "2025-11-27", "equity": 1007.25, "spy_equity": 1174.98}, {"date": "2025-11-28", "equity": 1009.43, "spy_equity": 1193.45}, {"date": "2025-12-01", "equity": 1017.88, "spy_equity": 1176.87}, {"date": "2025-12-02", "equity": 1030.12, "spy_equity": 1185.78}, {"date": "2025-12-03", "equity": 1041.4, "spy_equity": 1219.86}, {"date": "2025-12-04", "equity": 1060.78, "spy_equity": 1217.82}, {"date": "2025-12-05", "equity": 1064.33, "spy_equity": 1204.29}, {"date": "2025-12-08", "equity": 1051.86, "spy_equity": 1194.43}, {"date": "2025-12-09", "equity": 1055.16, "spy_equity": 1176.82}, {"date": "2025-12-10", "equity": 1058.33, "spy_equity": 1164.85}, {"date": "2025-12-11", "equity": 1060.62, "spy_equity": 1160.24}, {"date": "2025-12-12", "equity": 1053.17, "spy_equity": 1137.64}, {"date": "2025-12-15", "equity": 1078.96, "spy_equity": 1139.72}, {"date": "2025-12-16", "equity": 1090.75, "spy_equity": 1156.97}, {"date": "2025-12-17", "equity": 1090.6, "spy_equity": 1143.07}, {"date": "2025-12-18", "equity": 1114.06, "spy_equity": 1170.95}, {"date": "2025-12-19", "equity": 1121.87, "spy_equity": 1181.79}, {"date": "2025-12-22", "equity": 1154.19, "spy_equity": 1201.95}, {"date": "2025-12-23", "equity": 1155.89, "spy_equity": 1192.02}, {"date": "2025-12-24", "equity": 1131.02, "spy_equity": 1209.2}, {"date": "2025-12-25", "equity": 1139.54, "spy_equity": 1191.33}, {"date": "2025-12-26", "equity": 1156.94, "spy_equity": 1209.15}, {"date": "2025-12-29", "equity": 1177.1, "spy_equity": 1214.2}, {"date": "2025-12-30", "equity": 1180.64, "spy_equity": 1226.22}], "metrics": {"total_equity": 1180.64, "cash": 0.99, "total_pl": 180.64, "total_pl_pct": 18.06, "win_rate_pct": 30.77, "num_closed_trades": 13, "num_wins": 4, "num_losses": 9, "best_trade_pct": 9.92, "worst_trade_pct": -3.15, "spy_equity": 1226.22, "spy_total_pl_pct": 22.62}, "target_weights_today": {"NVDA": 0.0, "TQQQ": 0.0, "SMH": 0.42, "USD": 0.0, "IBIT": 0.0, "UPRO": 0.58}};
+
+  function loadDemo(){
+    const data = Object.assign({}, DEMO_DATA, {__source:'demo'});
+    viewingOverride = true;
+    renderEngine(data);
+    toast('Loaded demo data — hit Refresh to go back to the live feed');
+  }
+  $('demoBtn').addEventListener('click', loadDemo);
+  $('demoBtnEmpty').addEventListener('click', loadDemo);
+
+  // ================= MANUAL JOURNAL =================
+  function defaultManualState(){
+    return { startingCapital:1000, cash:1000, positions:{}, closedTrades:[], rawTrades:[], equityCurve:[] };
+  }
+  let manState = null;
+  const TXN_COST = 0.0005;
+
+  function computeManualMetrics(){
+    let openValue = 0;
+    const posRows = Object.entries(manState.positions).filter(([_,p])=>p.shares>1e-9).map(([sym,p])=>{
+      const mark = p.lastMark!=null ? p.lastMark : p.avgCost;
+      const val = p.shares*mark;
+      openValue += val;
+      const unreal = val - p.shares*p.avgCost;
+      return {sym, shares:p.shares, avgCost:p.avgCost, mark, val, unreal};
+    });
+    const equity = manState.cash + openValue;
+    const closed = manState.closedTrades;
+    const wins = closed.filter(t=>t.win).length;
+    const losses = closed.length - wins;
+    const winRate = closed.length ? (wins/closed.length*100) : 0;
+    const best = closed.length ? Math.max(...closed.map(t=>t.plPct)) : 0;
+    const totalPl = equity - manState.startingCapital;
+    const totalPlPct = manState.startingCapital ? (totalPl/manState.startingCapital*100) : 0;
+    return {equity, posRows, closed, wins, losses, winRate, best, totalPl, totalPlPct};
+  }
+
+  function renderManual(){
+    const hasAny = manState.rawTrades.length > 0;
+    $('manualEmpty').style.display = hasAny ? 'none' : '';
+    $('manualContent').style.display = hasAny ? '' : 'none';
+    if(!hasAny) return;
+
+    const mx = computeManualMetrics();
+    const kpis = [
+      {lbl:'Equity', val: fmtMoney(mx.equity), cls:''},
+      {lbl:'Total P/L', val: fmtMoney(mx.totalPl), sub: fmtPct(mx.totalPlPct), cls: mx.totalPl>=0?'gain':'loss'},
+      {lbl:'Win Rate', val: mx.winRate.toFixed(1)+'%', sub: mx.wins+'W / '+mx.losses+'L', cls:''},
+      {lbl:'Closed Trades', val: mx.closed.length, sub: mx.posRows.length+' open', cls:''},
+      {lbl:'Best Trade', val: fmtPct(mx.best), cls:'gain'},
+      {lbl:'Cash', val: fmtMoney(manState.cash), sub: manState.startingCapital? ((manState.cash/mx.equity*100).toFixed(1)+'% of equity'):'', cls:''},
+    ];
+    $('manualKpis').innerHTML = kpis.map(k=>`
+      <div class="p3-kpi"><div class="lbl">${k.lbl}</div><div class="val ${k.cls}">${k.val}</div>${k.sub?`<div class="sub ${k.cls}">${k.sub}</div>`:''}</div>
+    `).join('');
+
+    $('manPosBody').innerHTML = mx.posRows.length ? mx.posRows.map(p=>`
+      <tr>
+        <td><span class="tkr-badge">${p.sym}</span></td>
+        <td>${p.shares.toFixed(3)}</td>
+        <td>${fmtMoney(p.avgCost)}</td>
+        <td>${fmtMoney(p.mark)}</td>
+        <td class="${p.unreal>=0?'gain-text':'loss-text'}">${fmtMoney(p.unreal)}</td>
+      </tr>`).join('') : '<tr><td colspan="5" style="color:var(--dim);">No open positions</td></tr>';
+
+    const closedRev = mx.closed.slice().reverse();
+    $('manClosedBody').innerHTML = closedRev.length ? closedRev.map(t=>`
+      <tr>
+        <td><span class="tkr-badge">${t.sym}</span></td>
+        <td>${t.openDate}</td>
+        <td>${t.closeDate}</td>
+        <td class="${t.pl>=0?'gain-text':'loss-text'}">${fmtMoney(t.pl)}</td>
+        <td class="${t.plPct>=0?'gain-text':'loss-text'}">${fmtPct(t.plPct)}</td>
+        <td><span class="pill ${t.win?'win':'loss'}">${t.win?'WIN':'LOSS'}</span></td>
+      </tr>`).join('') : '<tr><td colspan="6" style="color:var(--dim);">No closed round trips yet</td></tr>';
+
+    const rawRev = manState.rawTrades.slice().reverse();
+    $('manRawBody').innerHTML = rawRev.map(t=>`
+      <tr>
+        <td>${t.date}</td>
+        <td><span class="tkr-badge">${t.symbol}</span></td>
+        <td class="${t.side==='buy'?'gain-text':'loss-text'}">${t.side.toUpperCase()}</td>
+        <td>${t.qty}</td>
+        <td>${fmtMoney(t.price)}</td>
+      </tr>`).join('');
+
+    const curve = manState.equityCurve;
+    $('manualChart').innerHTML = buildLineChartSVG(curve.map(c=>c.date), [
+      { name:'Paper equity', data: curve.map(c=>c.equity), color:'#4FD1C5', fill:true },
+    ], 260);
+  }
+
+  async function saveManual(){ await storeSet('manual-journal', manState); }
+
+  $('manTradeForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const symbol = $('manSymbol').value.trim().toUpperCase();
+    const side = $('manSide').value;
+    const qty = parseFloat($('manQty').value);
+    const price = parseFloat($('manPrice').value);
+    const dateVal = $('manDate').value || todayStr();
+    if(!symbol || !(qty>0) || !(price>0)){ toast('Fill in symbol, quantity and price'); return; }
+
+    manState.rawTrades.push({symbol, side, qty, price, date: dateVal});
+
+    let pos = manState.positions[symbol] || {shares:0, avgCost:0, openDate:dateVal, realizedAccum:0, costBasisAccum:0};
+    const notional = qty*price;
+    const friction = notional*TXN_COST;
+
+    if(side==='buy'){
+      const newShares = pos.shares + qty;
+      pos.avgCost = newShares>0 ? ((pos.shares*pos.avgCost + qty*price)/newShares) : price;
+      pos.costBasisAccum += qty*price;
+      if(pos.shares<=1e-9) pos.openDate = dateVal;
+      pos.shares = newShares;
+      pos.lastMark = price;
+      manState.cash -= (notional + friction);
+    } else {
+      const sellQty = Math.min(qty, pos.shares);
+      if(sellQty < qty){ toast('Only had '+pos.shares.toFixed(3)+' shares of '+symbol+' — sold what was available'); }
+      const realized = sellQty*(price - pos.avgCost);
+      pos.realizedAccum += realized;
+      pos.shares -= sellQty;
+      pos.lastMark = price;
+      manState.cash += (sellQty*price - friction);
+      if(pos.shares<=1e-6){
+        const basis = pos.costBasisAccum>0 ? pos.costBasisAccum : 1e-9;
+        manState.closedTrades.push({
+          sym:symbol, openDate:pos.openDate, closeDate:dateVal,
+          pl: Math.round(pos.realizedAccum*100)/100,
+          plPct: Math.round((pos.realizedAccum/basis*100)*100)/100,
+          win: pos.realizedAccum>0,
+        });
+        pos = {shares:0, avgCost:0, openDate:null, realizedAccum:0, costBasisAccum:0, lastMark:price};
+      }
+    }
+    manState.positions[symbol] = pos;
+
+    const mx = computeManualMetrics();
+    manState.equityCurve.push({date: dateVal, equity: Math.round(mx.equity*100)/100});
+
+    await saveManual();
+    renderManual();
+    $('manTradeForm').reset();
+    $('manDate').value = dateVal;
+    toast('Logged '+side+' '+qty+' '+symbol);
+  });
+
+  $('manSaveSettings').addEventListener('click', async ()=>{
+    const cap = parseFloat($('manStartCap').value);
+    if(!(cap>0)){ toast('Enter a valid starting capital'); return; }
+    manState.startingCapital = cap;
+    if(manState.rawTrades.length===0) manState.cash = cap;
+    await saveManual();
+    renderManual();
+    toast('Starting capital updated');
+  });
+
+  $('manResetBtn').addEventListener('click', async ()=>{
+    manState = defaultManualState();
+    await storeDelete('manual-journal');
+    renderManual();
+    $('manStartCap').value = 1000;
+    toast('Journal reset');
+  });
+
+  $('manExportCsv').addEventListener('click', ()=>{
+    const rows = [['date','symbol','side','qty','price']];
+    manState.rawTrades.forEach(t=>rows.push([t.date,t.symbol,t.side,t.qty,t.price]));
+    const csv = rows.map(r=>r.join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'phase3_manual_trades.csv'; a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // ================= INIT =================
+  async function init(){
+    $('manDate').value = todayStr();
+    await loadLive();
+    const saved = await storeGet('manual-journal');
+    manState = saved || defaultManualState();
+    $('manStartCap').value = manState.startingCapital;
+    renderManual();
+  }
+  init();
+})();
+</script>
+</body>
+</html>
